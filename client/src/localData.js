@@ -20,6 +20,8 @@ const relativeTimestamp = (days, hour = 12) => {
 const id = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const isEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const MAX_CHAT_FILES = 3;
+const MAX_CHAT_BYTES = 1024 * 1024;
 
 export function isAdminEmail(email) {
   return normalizeEmail(email) === normalizeEmail(readState().auth.admin.email);
@@ -378,6 +380,40 @@ function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function chatAttachments(input) {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > MAX_CHAT_FILES) fail('يمكنك إرفاق 3 ملفات كحد أقصى في الرسالة الواحدة.');
+  const attachments = input.map((file) => {
+    const name = String(file?.name || '').trim();
+    const type = String(file?.type || 'application/octet-stream');
+    const size = Number(file?.size);
+    const dataUrl = String(file?.dataUrl || '');
+    if (!name || name.length > 255 || !Number.isInteger(size) || size < 0 || !/^data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/]*={0,2}$/.test(dataUrl)) {
+      fail('تعذر قراءة أحد المرفقات. اختر الملف مرة أخرى.');
+    }
+    const encodedData = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    if (type.length > 255 || size > MAX_CHAT_BYTES || encodedData.length > Math.ceil(size / 3) * 4) {
+      fail('حجم المرفق غير صالح أو يتجاوز الحد المسموح.');
+    }
+    return { name, type, size, dataUrl };
+  });
+  if (attachments.reduce((total, file) => total + file.size, 0) > MAX_CHAT_BYTES) {
+    fail('الحد الإجمالي للمرفقات في الرسالة 1 ميجابايت.');
+  }
+  return attachments;
+}
+
+function saveChatMessage(state) {
+  try {
+    saveState(state);
+  } catch (error) {
+    if (error?.name === 'QuotaExceededError' || error?.code === 22 || error?.code === 1014) {
+      fail('مساحة التخزين المحلية ممتلئة. امسح المحادثة القديمة ثم حاول مجددًا.');
+    }
+    throw error;
+  }
+}
+
 function fail(message, status = 400) {
   const error = new Error(message);
   error.status = status;
@@ -624,9 +660,10 @@ export async function localData(path, { method = 'GET', body = {} } = {}) {
       result = { ok: true };
     } else if (route === 'client/messages' && method === 'POST') {
       const text = String(body.body || '').trim();
-      if (!text) fail('اكتب رسالتك');
-      state.messages.push(makeRecord(clientId, { from_client: true, body: text }));
-      saveState(state);
+      const attachments = chatAttachments(body.attachments);
+      if (!text && !attachments.length) fail('اكتب رسالتك أو أرفق ملفًا.');
+      state.messages.push(makeRecord(clientId, { from_client: true, body: text, ...(attachments.length ? { attachments } : {}) }));
+      saveChatMessage(state);
       result = { ok: true };
     } else if (route === 'client/notifications/count' && method === 'GET') result = { unread: unreadCount(state, clientId) };
     else if (route === 'client/notifications' && method === 'GET') {
@@ -798,10 +835,12 @@ export async function localData(path, { method = 'GET', body = {} } = {}) {
     } else if (parts[1] === 'clients' && parts[3] === 'messages' && method === 'POST') {
       const client = state.clients.find((row) => row.id === parts[2]);
       const text = String(body.body || '').trim();
-      if (!client || !text) fail('اكتب الرد');
-      state.messages.push(makeRecord(client.id, { from_client: false, body: text }));
+      const attachments = chatAttachments(body.attachments);
+      if (!client) fail('العميل غير موجود', 404);
+      if (!text && !attachments.length) fail('اكتب ردًا أو أرفق ملفًا.');
+      state.messages.push(makeRecord(client.id, { from_client: false, body: text, ...(attachments.length ? { attachments } : {}) }));
       addNotification(state, client.id, { type: 'reply', text: 'رد جديد من فريق المشروع على رسالتك', href: '/portal', ref_id: null });
-      saveState(state);
+      saveChatMessage(state);
       result = { ok: true };
     }
   }

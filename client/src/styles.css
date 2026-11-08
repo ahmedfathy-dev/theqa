@@ -388,9 +388,39 @@
   .conversation-scroll { @apply h-64 min-h-0 overflow-y-auto overscroll-contain rounded-md border border-line-soft bg-surface-sunken p-3; scrollbar-color: rgb(var(--control-border) / 0.6) transparent; scrollbar-width: thin; }
   .conversation-list { @apply min-h-full justify-end; }
   .conversation-list .empty { @apply my-auto; }
-  .bubble { @apply flex max-w-[92%] flex-col gap-0.5 self-end rounded-lg border border-line-soft bg-surface-sunken px-4 py-3; border-end-end-radius: 0.25rem; }
+  .bubble { @apply flex max-w-[92%] flex-col gap-0.5 self-end overflow-hidden rounded-lg border border-line-soft bg-surface-sunken px-4 py-3; overflow-wrap: anywhere; border-end-end-radius: 0.25rem; }
   .bubble.me { @apply self-start border-brand-100 bg-brand-50; border-end-end-radius: var(--radius-lg); border-end-start-radius: 0.25rem; }
   .bubble .who { @apply text-xs font-medium text-muted; }
+  .chat-composer { @apply flex flex-col gap-2 rounded-lg border border-line-soft bg-surface-sunken p-2; }
+  .chat-composer-row { @apply flex min-w-0 flex-nowrap items-end gap-1; }
+  .chat-attach-actions { @apply flex flex-none items-center gap-0; }
+  .chat-composer .chat-attachment-action { @apply size-9 min-h-9 rounded-md text-muted; }
+  .chat-composer .chat-send-action { @apply size-10 min-h-10 rounded-md; }
+  .chat-composer .btn svg { stroke-width: 2; }
+  .chat-composer textarea {
+    @apply min-h-10 min-w-0 flex-1 resize-none rounded-md border-transparent bg-surface px-2.5 py-2 text-sm;
+    width: auto;
+    height: 2.5rem;
+    max-height: 7.5rem;
+    overflow-y: auto;
+  }
+  .chat-composer textarea:focus { box-shadow: 0 0 0 2px rgb(var(--brand-500) / 0.18); }
+  @media (hover: hover) {
+    .chat-composer .chat-attachment-action:hover:not(:disabled) { @apply bg-surface text-brand-700; }
+  }
+  .chat-attachment-hint { @apply px-1 text-xs text-muted; }
+  .chat-pending-attachments { @apply flex flex-wrap gap-2; }
+  .chat-pending-item { @apply flex min-w-0 max-w-full items-center gap-2 rounded-md border border-line-soft bg-surface px-2 py-1.5 text-sm; }
+  .chat-pending-item > img { @apply size-9 flex-none rounded object-cover; }
+  .chat-pending-item > span { @apply max-w-48 truncate; }
+  .chat-remove-attachment { @apply grid size-8 flex-none place-items-center rounded text-muted; }
+  .chat-remove-attachment:hover { @apply bg-bad-50 text-bad-700; }
+  .chat-remove-attachment:focus-visible { @apply outline-none ring-2 ring-brand-500; }
+  .chat-attachments { @apply mt-1 flex flex-wrap gap-2; }
+  .chat-attachment-image { @apply block max-w-full overflow-hidden rounded-md border border-line-soft; }
+  .chat-attachment-image img { @apply max-h-60 max-w-full object-contain; }
+  .chat-attachment-file { @apply inline-flex max-w-full items-center gap-2 rounded-md border border-line-soft bg-surface px-3 py-2 text-sm no-underline; }
+  .chat-attachment-file span { @apply truncate; }
   .brand-identity { @apply gap-5; background: linear-gradient(115deg, rgb(var(--brand-50) / 0.72), rgb(var(--surface)) 65%); }
   .brand-identity-copy { @apply flex min-w-0 items-center gap-4; }
   .brand-identity-mark { @apply size-16 flex-none rounded-lg; }

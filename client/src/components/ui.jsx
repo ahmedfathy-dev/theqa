@@ -4,7 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { gooeyToast } from 'goey-toast';
-import { STATUS, STATUS_TONE } from '../format.js';
+import { fmtTime, STATUS, STATUS_TONE } from '../format.js';
 import { EASE_OUT, SPRING, reveal, rise, swap } from '../lib/motion.js';
 import logoColor from '../assets/logo.png';
 import logoWhite from '../assets/logo-white.png';
@@ -23,6 +23,10 @@ const ICONS = {
   bell: { d: 'M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0' },
   alert: { d: 'M12 8v5m0 3.5h.01M10.3 3.9 2.4 17.5a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z' },
   trash: { d: 'M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v6m4-6v6' },
+  close: { d: 'm18 6-12 12M6 6l12 12' },
+  image: { d: 'M4 4h16v16H4zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM20 15l-5-5-9 10' },
+  paperclip: { d: 'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48' },
+  send: { d: 'M22 2 11 13M22 2l-7 20-4-9-9-4z', flip: true },
   home: { d: 'm3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' },
   updates: { d: 'M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
   phases: { d: 'M4 6h16M4 12h16M4 18h16M7 6h.01M7 12h.01M7 18h.01' },
@@ -510,6 +514,198 @@ export function ClearConversationButton({ onClear, audience }) {
         onCancel={() => setOpen(false)}
       />
     </>
+  );
+}
+
+const MAX_CHAT_FILES = 3;
+const MAX_CHAT_BYTES = 1024 * 1024;
+
+function readChatFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('تعذر قراءة الملف، حاول مرة أخرى.'));
+        return;
+      }
+      resolve({
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        dataUrl: reader.result,
+      });
+    };
+    reader.onerror = () => reject(new Error(`تعذر قراءة الملف «${file.name}».`));
+    reader.onabort = () => reject(new Error(`تم إلغاء قراءة الملف «${file.name}».`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function ChatAttachments({ attachments = [] }) {
+  if (!attachments.length) return null;
+  return (
+    <div className="chat-attachments">
+      {attachments.map((attachment, index) => {
+        const isImage = attachment.type?.startsWith('image/') && attachment.type !== 'image/svg+xml';
+        return (
+          <a
+            key={`${attachment.name}-${index}`}
+            className={isImage ? 'chat-attachment-image' : 'chat-attachment-file'}
+            href={attachment.dataUrl}
+            download={attachment.name}
+            target={isImage ? '_blank' : undefined}
+            rel={isImage ? 'noreferrer' : undefined}
+          >
+            {isImage
+              ? <img src={attachment.dataUrl} alt={attachment.name} loading="lazy" />
+              : <><Icon name="paperclip" /><span>{attachment.name}</span></>}
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ChatPanel({ title, messages = [], currentUser, otherUser, label, clearAudience, onSend, onClear }) {
+  const [body, setBody] = useState('');
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [readingFiles, setReadingFiles] = useState(false);
+  const conversationRef = useRef(null);
+  const imageInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const messageInputRef = useRef(null);
+  const { busy, err, run } = useAction();
+
+  useEffect(() => {
+    const conversation = conversationRef.current;
+    if (conversation) conversation.scrollTo({ top: conversation.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
+
+  const addFiles = async (event) => {
+    const selected = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = '';
+    if (!selected.length) return;
+    setAttachmentError('');
+    if (attachments.length + selected.length > MAX_CHAT_FILES) {
+      setAttachmentError('يمكنك إرفاق 3 ملفات كحد أقصى في الرسالة الواحدة.');
+      return;
+    }
+    if (attachments.reduce((total, file) => total + file.size, 0) + selected.reduce((total, file) => total + file.size, 0) > MAX_CHAT_BYTES) {
+      setAttachmentError('الحد الإجمالي للمرفقات في الرسالة 1 ميجابايت.');
+      return;
+    }
+
+    setReadingFiles(true);
+    try {
+      const loaded = await Promise.all(selected.map(readChatFile));
+      setAttachments((current) => [...current, ...loaded]);
+    } catch (error) {
+      setAttachmentError(error.message);
+    } finally {
+      setReadingFiles(false);
+    }
+  };
+
+  const send = async (event) => {
+    event.preventDefault();
+    const message = body.trim();
+    if ((!message && !attachments.length) || readingFiles) return;
+    const sent = await run(() => onSend({ body: message, attachments }), 'تم إرسال الرسالة');
+    if (sent) {
+      setBody('');
+      setAttachments([]);
+      setAttachmentError('');
+      if (messageInputRef.current) messageInputRef.current.style.height = '2.5rem';
+    }
+  };
+
+  return (
+    <Card
+      title={title}
+      className="conversation-card"
+      actions={messages.length > 0 && onClear && (
+        <ClearConversationButton audience={clearAudience} onClear={onClear} />
+      )}
+    >
+      <div className="conversation-scroll" ref={conversationRef} role="log" aria-label={label} aria-live="polite" tabIndex={0}>
+        {messages.length ? (
+          <List className="conversation-list col gap-2">
+            {messages.map((message) => (
+              <div key={message.id} className={`bubble${message.from_client ? (currentUser === 'client' ? ' me' : '') : (currentUser === 'team' ? ' me' : '')}`}>
+                <span className="who">
+                  <bdi>{message.from_client ? (currentUser === 'client' ? 'أنت' : otherUser) : (currentUser === 'team' ? 'أنت' : otherUser)}</bdi>
+                  {message.created_at && <> · <time dateTime={message.created_at}><bdi>{fmtTime(message.created_at)}</bdi></time></>}
+                </span>
+                {message.body && <span className="whitespace-pre-wrap">{message.body}</span>}
+                <ChatAttachments attachments={message.attachments} />
+              </div>
+            ))}
+          </List>
+        ) : <Empty>ابدأ المحادثة الآن.</Empty>}
+      </div>
+
+      <form className="chat-composer" onSubmit={send}>
+        {attachments.length > 0 && (
+          <div className="chat-pending-attachments" aria-label="المرفقات الجاهزة للإرسال">
+            {attachments.map((attachment, index) => {
+              const isImage = attachment.type.startsWith('image/') && attachment.type !== 'image/svg+xml';
+              return (
+                <div className="chat-pending-item" key={`${attachment.name}-${index}`}>
+                  {isImage
+                    ? <img src={attachment.dataUrl} alt="" />
+                    : <Icon name="paperclip" />}
+                  <span title={attachment.name}>{attachment.name}</span>
+                  <button
+                    type="button"
+                    className="chat-remove-attachment"
+                    aria-label={`إزالة ${attachment.name}`}
+                    onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    <Icon name="close" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="chat-composer-row">
+          <div className="chat-attach-actions">
+            <input ref={imageInputRef} type="file" accept="image/*" multiple onChange={addFiles} aria-label="اختيار صور" hidden />
+            <input ref={fileInputRef} type="file" multiple onChange={addFiles} aria-label="اختيار ملفات" hidden />
+            <Button type="button" variant="ghost" size="small" icon className="chat-attachment-action" aria-label="إرفاق صورة" title="إرفاق صورة" disabled={busy || readingFiles} onClick={() => imageInputRef.current?.click()}>
+              <Icon name="image" />
+            </Button>
+            <Button type="button" variant="ghost" size="small" icon className="chat-attachment-action" aria-label="إرفاق ملف" title="إرفاق ملف" disabled={busy || readingFiles} onClick={() => fileInputRef.current?.click()}>
+              <Icon name="paperclip" />
+            </Button>
+          </div>
+          <textarea
+            ref={messageInputRef}
+            rows={1}
+            value={body}
+            onChange={(event) => {
+              setBody(event.target.value);
+              if (!event.target.value) {
+                event.currentTarget.style.height = '2.5rem';
+                return;
+              }
+              event.currentTarget.style.height = 'auto';
+              event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`;
+            }}
+            placeholder="رسالة…"
+            aria-label="رسالتك"
+            disabled={busy}
+          />
+          <Button type="submit" icon className="chat-send-action" aria-label="إرسال الرسالة" title="إرسال الرسالة" loading={busy || readingFiles} disabled={busy || readingFiles || (!body.trim() && !attachments.length)}>
+            <Icon name="send" />
+          </Button>
+        </div>
+        <p className="chat-attachment-hint">حتى 3 مرفقات، بإجمالي 1 ميجابايت للرسالة.</p>
+        {attachmentError && <p className="field-error" role="alert">{attachmentError}</p>}
+        <FormError message={err} />
+      </form>
+    </Card>
   );
 }
 

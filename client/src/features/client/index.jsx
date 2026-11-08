@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate, useOutletContext, useParams, Link } from 'react-router-dom';
 import { isAdminEmail, localData, useLocalData } from '../../localData.js';
 import { fmtDate, fmtShort, fmtTime, KIND, NOTIF_TYPE } from '../../format.js';
-import { AppSidebar, AuthLayout, Bar, Button, ButtonLink, Card, Chip, ClearConversationButton, CommentThread, Empty, ErrorBox, Field, FormError, LinkCard, List, Loading, Page, PasswordInput, Range, StatusChip, Switch, useAction } from '../../components/ui.jsx';
+import { AppSidebar, AuthLayout, Bar, Button, ButtonLink, Card, ChatPanel, Chip, CommentThread, Empty, ErrorBox, Field, FormError, LinkCard, List, Loading, Page, PasswordInput, Range, StatusChip, Switch, useAction } from '../../components/ui.jsx';
 import FeatureRequestCard from './components/RequestCard.jsx';
 import PasswordRecovery from '../auth/PasswordRecovery.jsx';
 
@@ -87,23 +87,11 @@ export function ClientLayout() {
 // ---------- الرئيسية ----------
 export function Portal() {
   const { data, error, loading, reload } = useLocalData('/client/overview');
-  const [msg, setMsg] = useState('');
-  const conversationRef = useRef(null);
-  const { busy, err, run } = useAction();
   const messages = data?.messages;
-  useEffect(() => {
-    const conversation = conversationRef.current;
-    if (conversation) conversation.scrollTop = conversation.scrollHeight;
-  }, [messages]);
   if (loading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const { client, phases, requests, updates, files } = data;
   const open = requests.filter((r) => r.status === 'open');
-  const send = async (e) => {
-    e.preventDefault();
-    const ok = await run(() => localData('/client/messages', { method: 'POST', body: { body: msg } }), 'تم إرسال رسالتك');
-    if (ok) { setMsg(''); reload(); }
-  };
   return (
     <Page title={client.project_name} actions={<Chip tone="green" dot>مشروع نشط</Chip>}>
       {client.brand_name && (
@@ -185,40 +173,22 @@ export function Portal() {
             </List>
           ) : <Empty>لا توجد ملفات.</Empty>}
         </Card>
-        <Card
+        <ChatPanel
           title="تواصل مع الفريق"
-          className="conversation-card"
-          actions={messages.length > 0 && (
-            <ClearConversationButton
-              audience="فريق المشروع"
-              onClear={async () => {
-                await localData('/client/messages', { method: 'DELETE' });
-                reload();
-              }}
-            />
-          )}
-        >
-          <div className="conversation-scroll" ref={conversationRef} role="log" aria-label="المحادثة مع فريق المشروع" aria-live="polite" tabIndex={0}>
-            {messages.length > 0 ? (
-              <List className="conversation-list col gap-2">
-              {messages.map((m) => (
-                <div key={m.id} className={`bubble${m.from_client ? ' me' : ''}`}>
-                  <span className="who">
-                    <bdi>{m.from_client ? 'أنت' : 'فريق المشروع'}</bdi>
-                    {m.created_at && <> · <time dateTime={m.created_at}><bdi>{fmtTime(m.created_at)}</bdi></time></>}
-                  </span>
-                  <span className="whitespace-pre-wrap">{m.body}</span>
-                </div>
-              ))}
-              </List>
-            ) : <Empty>ابدأ المحادثة مع فريق المشروع.</Empty>}
-          </div>
-          <form onSubmit={send} className="col gap-2">
-            <textarea rows={2} value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="اكتب رسالتك…" aria-label="رسالتك" />
-            <FormError message={err} />
-            <Button size="small" loading={busy} disabled={busy || !msg.trim()}>إرسال</Button>
-          </form>
-        </Card>
+          messages={messages}
+          currentUser="client"
+          otherUser="فريق المشروع"
+          label="المحادثة مع فريق المشروع"
+          clearAudience="فريق المشروع"
+          onSend={async (message) => {
+            await localData('/client/messages', { method: 'POST', body: message });
+            reload();
+          }}
+          onClear={async () => {
+            await localData('/client/messages', { method: 'DELETE' });
+            reload();
+          }}
+        />
       </div>
     </Page>
   );

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { localData, useLocalData } from '../../localData.js';
 import { fmtDate, fmtShort, fmtTime, KIND } from '../../format.js';
-import { AppSidebar, Bar, Button, ButtonLink, Card, ChoiceGroup, Chip, ClearConversationButton, CommentThread, Empty, ErrorBox, Field, FormError, Gantt, Icon, LinkCard, List, Loading, NavTabs, Page, Range, Reveal, Select, StatusChip, SwapIcon, useAction } from '../../components/ui.jsx';
+import { AppSidebar, Bar, Button, ButtonLink, Card, ChatPanel, ChoiceGroup, Chip, CommentThread, Empty, ErrorBox, Field, FormError, Gantt, Icon, LinkCard, List, Loading, NavTabs, Page, Range, Reveal, Select, StatusChip, SwapIcon, useAction } from '../../components/ui.jsx';
 import PhaseEditor from './components/PhaseEditor.jsx';
 import PasswordRecovery from '../auth/PasswordRecovery.jsx';
 
@@ -251,52 +251,27 @@ export function AdminComments() {
 // ---------- التواصل ----------
 export function Comms() {
   const { d, id, reload } = useCtx();
-  const [reply, setReply] = useState('');
   const [u, setU] = useState({ title: '', body: '', phase_name: '' });
-  const conversationRef = useRef(null);
-  const a = useAction();
   const b = useAction();
-  useEffect(() => {
-    const conversation = conversationRef.current;
-    if (conversation) conversation.scrollTop = conversation.scrollHeight;
-  }, [d.messages]);
-  const sendReply = (e) => { e.preventDefault(); a.run(async () => { await localData(`/admin/clients/${id}/messages`, { method: 'POST', body: { body: reply } }); setReply(''); reload(); }, 'تم إرسال الرد'); };
   const publish = (e) => { e.preventDefault(); b.run(async () => { await localData(`/admin/clients/${id}/updates`, { method: 'POST', body: u }); setU({ title: '', body: '', phase_name: '' }); reload(); }, 'تم نشر التحديث وإشعار العميل'); };
   return (
     <div className="cols">
-      <Card
+      <ChatPanel
         title="رسائل العميل"
-        actions={d.messages.length > 0 && (
-          <ClearConversationButton
-            audience="العميل"
-            onClear={async () => {
-              await localData(`/admin/clients/${id}/messages`, { method: 'DELETE' });
-              reload();
-            }}
-          />
-        )}
-      >
-        <div className="conversation-scroll" ref={conversationRef} role="log" aria-label="المحادثة مع العميل" aria-live="polite" tabIndex={0}>
-          {d.messages.length ? (
-            <List className="conversation-list col gap-2">
-              {d.messages.map((msg) => (
-                <div key={msg.id} className={`bubble${msg.from_client ? '' : ' me'}`}>
-                  <span className="who">
-                    <bdi>{msg.from_client ? 'العميل' : 'أنت'}</bdi>
-                    {msg.created_at && <> · <time dateTime={msg.created_at}><bdi>{fmtTime(msg.created_at)}</bdi></time></>}
-                  </span>
-                  <span className="whitespace-pre-wrap">{msg.body}</span>
-                </div>
-              ))}
-            </List>
-          ) : <Empty>لا توجد رسائل.</Empty>}
-        </div>
-        <form onSubmit={sendReply} className="col gap-2">
-          <textarea rows={3} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="اكتب ردك…" aria-label="الرد" />
-          <FormError message={a.err} />
-          <Button size="small" loading={a.busy} disabled={a.busy || !reply.trim()}>إرسال الرد</Button>
-        </form>
-      </Card>
+        messages={d.messages}
+        currentUser="team"
+        otherUser={d.client.name}
+        label="المحادثة مع العميل"
+        clearAudience="العميل"
+        onSend={async (message) => {
+          await localData(`/admin/clients/${id}/messages`, { method: 'POST', body: message });
+          reload();
+        }}
+        onClear={async () => {
+          await localData(`/admin/clients/${id}/messages`, { method: 'DELETE' });
+          reload();
+        }}
+      />
       <Card as="form" hl title="نشر تحديث للعميل" onSubmit={publish}>
         <Field label="العنوان"><input type="text" value={u.title} onChange={(e) => setU({ ...u, title: e.target.value })} /></Field>
         <Field label="المرحلة (اختياري)">

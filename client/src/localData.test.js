@@ -53,7 +53,24 @@ test('email login and password recovery work for client and admin demo accounts'
   assert.equal((await localData('/client/files')).length, 2);
   await localData('/client/messages', { method: 'DELETE' });
   assert.equal((await localData('/client/overview')).messages.length, 0);
-  await post('/client/messages', { body: 'رسالة اختبار قبل الحذف من الإدارة' });
+  const attachment = { name: 'image.png', type: 'image/png', size: 1, dataUrl: 'data:image/png;base64,AA==' };
+  await assert.rejects(post('/client/messages', { body: ' ' }), /اكتب رسالتك أو أرفق ملفًا/);
+  await post('/client/messages', { body: 'رسالة اختبار قبل الحذف من الإدارة', attachments: [attachment] });
+  const clientMessage = (await localData('/client/overview')).messages[0];
+  assert.equal(clientMessage.body, 'رسالة اختبار قبل الحذف من الإدارة');
+  assert.deepEqual(clientMessage.attachments, [attachment]);
+  await assert.rejects(
+    post('/client/messages', { body: '', attachments: Array(4).fill(attachment) }),
+    /3 ملفات كحد أقصى/,
+  );
+  await assert.rejects(
+    post('/client/messages', { body: '', attachments: [{ ...attachment, size: 1024 * 1024 + 1 }] }),
+    /حجم المرفق/,
+  );
+  const setItem = globalThis.localStorage.setItem;
+  globalThis.localStorage.setItem = () => { throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' }); };
+  await assert.rejects(post('/client/messages', { body: 'اختبار مساحة التخزين' }), /مساحة التخزين المحلية ممتلئة/);
+  globalThis.localStorage.setItem = setItem;
   await post('/client/logout', {});
   await assert.rejects(
     post('/client/login', { email: 'new-client@example.com', password: 'wrong-password' }),
@@ -123,6 +140,16 @@ test('email login and password recovery work for client and admin demo accounts'
   assert.deepEqual(await localData('/admin/me'), { ok: true });
   const demoClientAdminData = await localData(`/admin/clients/${demoOverview.client.id}`);
   assert.equal(demoClientAdminData.messages.length, 1);
+  assert.deepEqual(demoClientAdminData.messages[0].attachments, [attachment]);
+  await assert.rejects(
+    post(`/admin/clients/${demoOverview.client.id}/messages`, { body: '' }),
+    /اكتب ردًا أو أرفق ملفًا/,
+  );
+  await post(`/admin/clients/${demoOverview.client.id}/messages`, { body: '', attachments: [attachment] });
+  assert.deepEqual(
+    (await localData(`/admin/clients/${demoOverview.client.id}`)).messages.at(-1).attachments,
+    [attachment],
+  );
   await localData(`/admin/clients/${demoOverview.client.id}/messages`, { method: 'DELETE' });
   assert.equal((await localData(`/admin/clients/${demoOverview.client.id}`)).messages.length, 0);
   await post('/admin/logout', {});

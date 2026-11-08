@@ -22,6 +22,7 @@ const ICONS = {
   logout: { d: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9', flip: true },
   bell: { d: 'M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0' },
   alert: { d: 'M12 8v5m0 3.5h.01M10.3 3.9 2.4 17.5a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z' },
+  trash: { d: 'M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v6m4-6v6' },
   home: { d: 'm3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z' },
   updates: { d: 'M12 8v4l2.5 2.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
   phases: { d: 'M4 6h16M4 12h16M4 18h16M7 6h.01M7 12h.01M7 18h.01' },
@@ -476,6 +477,41 @@ function DialogShell({ title, description, icon = 'logout', tone, confirmLabel, 
 export const ConfirmDialog = ({ open, ...props }) => (
   <AnimatePresence>{open && <DialogShell key="dialog" {...props} />}</AnimatePresence>
 );
+
+export function ClearConversationButton({ onClear, audience }) {
+  const [open, setOpen] = useState(false);
+  const { busy, err, run } = useAction();
+  const confirmClear = async () => {
+    if (await run(onClear, 'تم مسح المحادثة')) setOpen(false);
+  };
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="small"
+        className="text-bad-700 hover:bg-bad-50"
+        onClick={() => setOpen(true)}
+      >
+        <Icon name="trash" />
+        مسح الشات
+      </Button>
+      <ConfirmDialog
+        open={open}
+        title="مسح المحادثة؟"
+        description={`سيتم حذف جميع الرسائل بينك وبين ${audience} نهائيًا، ولا يمكن استعادتها.`}
+        icon="trash"
+        tone="danger"
+        confirmLabel="مسح المحادثة"
+        cancelLabel="إلغاء"
+        busy={busy}
+        error={err}
+        onConfirm={confirmClear}
+        onCancel={() => setOpen(false)}
+      />
+    </>
+  );
+}
 
 export function LogoutDialog({ open, onClose, onLogout }) {
   const { busy, err, run } = useAction();

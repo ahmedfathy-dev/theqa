@@ -2,47 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import { localData, useLocalData } from '../../localData.js';
 import { fmtDate, fmtShort, fmtTime, KIND } from '../../format.js';
-import { AppSidebar, AuthLayout, Bar, Button, ButtonLink, Card, ChoiceGroup, Chip, CommentThread, Empty, ErrorBox, Field, FormError, Gantt, Icon, LinkCard, List, Loading, NavTabs, Page, PasswordInput, Range, Reveal, Select, StatusChip, SwapIcon, useAction } from '../../components/ui.jsx';
+import { AppSidebar, Bar, Button, ButtonLink, Card, ChoiceGroup, Chip, ClearConversationButton, CommentThread, Empty, ErrorBox, Field, FormError, Gantt, Icon, LinkCard, List, Loading, NavTabs, Page, Range, Reveal, Select, StatusChip, SwapIcon, useAction } from '../../components/ui.jsx';
 import PhaseEditor from './components/PhaseEditor.jsx';
 import PasswordRecovery from '../auth/PasswordRecovery.jsx';
 
 // ---------- الدخول والإطار ----------
-export function AdminLogin() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [missing, setMissing] = useState('');
-  const { state } = useLocation();
-  const [loggedOut] = useState(Boolean(state?.loggedOut));
-  const { busy, err, run } = useAction();
-  const nav = useNavigate();
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setMissing('أدخل بريدًا إلكترونيًا صحيحًا.'); return; }
-    if (!password) { setMissing('أدخل كلمة المرور للمتابعة'); return; }
-    if (await run(() => localData('/admin/login', { method: 'POST', body: { email, password } }), 'تم تسجيل الدخول بنجاح')) nav('/admin');
-  };
-  return (
-    <AuthLayout
-      brand="مساحة الفريق"
-      heading="لوحتي"
-      description="سجّل الدخول لإدارة العملاء ومشاريعهم وتحديثاتهم."
-      points={['إدارة العملاء والمشاريع', 'الجدولة والمراحل', 'التعليقات والتواصل']}
-      notice={loggedOut ? 'تم تسجيل الخروج بنجاح' : null}
-      onSubmit={submit}
-    >
-      <Field label="البريد الإلكتروني" error={missing || err}>
-        <input type="email" className="ltr" dir="ltr" autoFocus autoComplete="email" required value={email} onChange={(e) => { setEmail(e.target.value); setMissing(''); }} placeholder="team@example.com" />
-      </Field>
-      <Field label="كلمة المرور">
-        <PasswordInput autoComplete="current-password" required value={password} onChange={(e) => { setPassword(e.target.value); setMissing(''); }} />
-      </Field>
-      <Button block loading={busy}>دخول</Button>
-      <ButtonLink to="/admin/forgot-password" variant="ghost" size="small" block>هل نسيت كلمة المرور؟</ButtonLink>
-      <ButtonLink to="/login" variant="ghost" size="small" block>دخول العملاء</ButtonLink>
-    </AuthLayout>
-  );
-}
-
 export function AdminPasswordRecovery() {
   return <PasswordRecovery role="admin" />;
 }
@@ -300,7 +264,18 @@ export function Comms() {
   const publish = (e) => { e.preventDefault(); b.run(async () => { await localData(`/admin/clients/${id}/updates`, { method: 'POST', body: u }); setU({ title: '', body: '', phase_name: '' }); reload(); }, 'تم نشر التحديث وإشعار العميل'); };
   return (
     <div className="cols">
-      <Card title="رسائل العميل">
+      <Card
+        title="رسائل العميل"
+        actions={d.messages.length > 0 && (
+          <ClearConversationButton
+            audience="العميل"
+            onClear={async () => {
+              await localData(`/admin/clients/${id}/messages`, { method: 'DELETE' });
+              reload();
+            }}
+          />
+        )}
+      >
         <div className="conversation-scroll" ref={conversationRef} role="log" aria-label="المحادثة مع العميل" aria-live="polite" tabIndex={0}>
           {d.messages.length ? (
             <List className="conversation-list col gap-2">

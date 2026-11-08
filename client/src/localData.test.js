@@ -8,7 +8,7 @@ globalThis.localStorage = {
   removeItem: (key) => storage.delete(key),
 };
 
-const { localData } = await import('./localData.js');
+const { isAdminEmail, localData } = await import('./localData.js');
 const post = (path, body) => localData(path, { method: 'POST', body });
 const storageKey = 'react-portal-data-v1';
 const clientEmail = 'client@example.test';
@@ -19,6 +19,9 @@ const wrongCode = (code) => (code === '000000' ? '000001' : '000000');
 
 test('email login and password recovery work for client and admin demo accounts', async () => {
   storage.clear();
+  assert.equal(isAdminEmail(adminEmail), true);
+  assert.equal(isAdminEmail(` ${adminEmail.toUpperCase()} `), true);
+  assert.equal(isAdminEmail(clientEmail), false);
 
   await assert.rejects(
     post('/client/login', { email: clientEmail, password: 'wrongpass' }),
@@ -32,6 +35,10 @@ test('email login and password recovery work for client and admin demo accounts'
     post('/client/login', { email: 'new-client@example.com', password: '' }),
     (error) => error.status === 400,
   );
+  await assert.rejects(
+    post('/client/login', { email: adminEmail, password: adminPassword }),
+    (error) => error.status === 401,
+  );
   await post('/client/login', { email: 'new-client@example.com', password: 'any-password' });
   const demoOverview = await localData('/client/overview');
   assert.equal(demoOverview.client.id, 'demo-client');
@@ -44,6 +51,9 @@ test('email login and password recovery work for client and admin demo accounts'
   assert.equal(demoOverview.messages.length, 3);
   assert.equal((await localData('/client/requests')).length, 2);
   assert.equal((await localData('/client/files')).length, 2);
+  await localData('/client/messages', { method: 'DELETE' });
+  assert.equal((await localData('/client/overview')).messages.length, 0);
+  await post('/client/messages', { body: 'رسالة اختبار قبل الحذف من الإدارة' });
   await post('/client/logout', {});
   await assert.rejects(
     post('/client/login', { email: 'new-client@example.com', password: 'wrong-password' }),
@@ -108,8 +118,13 @@ test('email login and password recovery work for client and admin demo accounts'
   );
 
   await assert.rejects(post('/admin/login', { email: adminEmail, password: 'wrongpass' }), (error) => error.status === 401);
+  await assert.rejects(post('/admin/login', { email: clientEmail, password: clientPassword }), (error) => error.status === 401);
   await post('/admin/login', { email: adminEmail, password: adminPassword });
   assert.deepEqual(await localData('/admin/me'), { ok: true });
+  const demoClientAdminData = await localData(`/admin/clients/${demoOverview.client.id}`);
+  assert.equal(demoClientAdminData.messages.length, 1);
+  await localData(`/admin/clients/${demoOverview.client.id}/messages`, { method: 'DELETE' });
+  assert.equal((await localData(`/admin/clients/${demoOverview.client.id}`)).messages.length, 0);
   await post('/admin/logout', {});
 
   const adminReset = await post('/admin/password-reset', { email: adminEmail });

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { localData } from '../../localData.js';
 import { AuthLayout, Button, ButtonLink, Field, FormError, PasswordInput, useAction } from '../../components/ui.jsx';
 
@@ -7,7 +6,7 @@ const isEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 export default function PasswordRecovery({ role }) {
   const isAdmin = role === 'admin';
-  const loginPath = isAdmin ? '/admin/login' : '/login';
+  const loginPath = '/login';
   const route = isAdmin ? '/admin/password-reset' : '/client/password-reset';
   const confirmRoute = `${route}/confirm`;
   const [step, setStep] = useState('email');
@@ -141,9 +140,6 @@ export default function PasswordRecovery({ role }) {
 
       {step !== 'done' && (
         <ButtonLink to={loginPath} variant="ghost" size="small" block>العودة لتسجيل الدخول</ButtonLink>
-      )}
-      {!isAdmin && step !== 'done' && (
-        <Link to="/admin/login" className="auth-switch-link">دخول الإدارة</Link>
       )}
     </AuthLayout>
   );

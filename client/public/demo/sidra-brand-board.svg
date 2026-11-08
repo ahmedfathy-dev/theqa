@@ -1,22 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
-  <rect width="1200" height="800" fill="#F4F0E7"/>
-  <rect x="36" y="36" width="1128" height="728" rx="28" fill="#FBFAF7" stroke="#E4DED1" stroke-width="2"/>
-  <path d="M38 64a28 28 0 0 1 28-28h1068a28 28 0 0 1 28 28v286H38V64Z" fill="#244B3D"/>
-  <circle cx="1018" cy="170" r="92" fill="#315E4D"/>
-  <path d="M1018 94c-22 31-48 57-48 89a48 48 0 0 0 96 0c0-32-26-58-48-89Z" stroke="#F4F0E7" stroke-width="7"/>
-  <path d="M1018 133v70m0-35c-13 0-24-8-30-19m30 11c13 0 23-8 30-19" stroke="#D8BE94" stroke-linecap="round" stroke-width="5"/>
-  <text x="880" y="161" fill="#F4F0E7" font-family="Alexandria, Arial, sans-serif" font-size="52" font-weight="700" text-anchor="end" direction="rtl">دار سُدرة</text>
-  <text x="880" y="214" fill="#E8E2D6" font-family="Alexandria, Arial, sans-serif" font-size="24" text-anchor="end" direction="rtl">طبيعة بيتك، بروح أهدأ</text>
-  <text x="880" y="270" fill="#D8BE94" font-family="Alexandria, Arial, sans-serif" font-size="17" text-anchor="end" direction="rtl">هوية متجر لمنتجات منزلية طبيعية</text>
-  <text x="1080" y="420" fill="#244B3D" font-family="Alexandria, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="end" direction="rtl">لوحة الألوان</text>
-  <g font-family="Alexandria, Arial, sans-serif" font-size="17" fill="#244B3D" text-anchor="middle">
-    <rect x="720" y="458" width="300" height="140" rx="16" fill="#244B3D"/>
-    <text x="870" y="634" direction="rtl">أخضر السرو · #244B3D</text>
-    <rect x="450" y="458" width="230" height="140" rx="16" fill="#D8BE94"/>
-    <text x="565" y="634" direction="rtl">رملي دافئ · #D8BE94</text>
-    <rect x="180" y="458" width="230" height="140" rx="16" fill="#F4F0E7" stroke="#E4DED1" stroke-width="2"/>
-    <text x="295" y="634" direction="rtl">عاجي · #F4F0E7</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 840" role="img" aria-labelledby="title description">
+  <title id="title">لوحة الهوية البصرية لدار سُدرة</title>
+  <desc id="description">الشعار والعبارة التعريفية ولوحة ألوان أخضر السرو والرملي الدافئ والعاجي.</desc>
+  <rect width="1200" height="840" fill="#F4F0E7"/>
+  <rect x="36" y="32" width="1128" height="776" rx="28" fill="#FBFAF7" stroke="#E4DED1" stroke-width="2"/>
+
+  <path d="M64 32h1072a28 28 0 0 1 28 28v282H36V60a28 28 0 0 1 28-28Z" fill="#244B3D"/>
+  <path d="M190 105c-49 0-88 39-88 88s39 88 88 88 88-39 88-88-39-88-88-88Z" fill="#315E4D"/>
+  <path d="M190 137c-19 27-40 48-40 74a40 40 0 0 0 80 0c0-26-21-47-40-74Z" fill="none" stroke="#F4F0E7" stroke-linejoin="round" stroke-width="6"/>
+  <path d="M190 169v58m0-31c-11 0-20-7-25-16m25 10c11 0 19-7 25-16" fill="none" stroke="#D8BE94" stroke-linecap="round" stroke-width="4"/>
+
+  <text x="1040" y="157" fill="#F4F0E7" font-family="Alexandria, Arial, sans-serif" font-size="54" font-weight="700" text-anchor="end" direction="rtl">دار سُدرة</text>
+  <text x="1040" y="207" fill="#E8E2D6" font-family="Alexandria, Arial, sans-serif" font-size="24" text-anchor="end" direction="rtl">طبيعة بيتك، بروح أهدأ</text>
+  <path d="M794 239h246" stroke="#D8BE94" stroke-width="2"/>
+  <text x="1040" y="276" fill="#D8BE94" font-family="Alexandria, Arial, sans-serif" font-size="17" text-anchor="end" direction="rtl">هوية متجر لمنتجات منزلية طبيعية</text>
+
+  <text x="1076" y="414" fill="#244B3D" font-family="Alexandria, Arial, sans-serif" font-size="25" font-weight="700" text-anchor="end" direction="rtl">لوحة الألوان</text>
+  <text x="1076" y="444" fill="#65766D" font-family="Alexandria, Arial, sans-serif" font-size="15" text-anchor="end" direction="rtl">درجات طبيعية تكمل شخصية العلامة</text>
+
+  <g font-family="Alexandria, Arial, sans-serif" text-anchor="middle">
+    <rect x="754" y="474" width="292" height="154" rx="16" fill="#244B3D"/>
+    <text x="900" y="668" fill="#244B3D" font-size="17" font-weight="600" direction="rtl">أخضر السرو</text>
+    <text x="900" y="696" fill="#65766D" font-size="15">#244B3D</text>
+
+    <rect x="454" y="474" width="292" height="154" rx="16" fill="#D8BE94"/>
+    <text x="600" y="668" fill="#244B3D" font-size="17" font-weight="600" direction="rtl">رملي دافئ</text>
+    <text x="600" y="696" fill="#65766D" font-size="15">#D8BE94</text>
+
+    <rect x="154" y="474" width="292" height="154" rx="16" fill="#F4F0E7" stroke="#E4DED1" stroke-width="2"/>
+    <text x="300" y="668" fill="#244B3D" font-size="17" font-weight="600" direction="rtl">عاجي</text>
+    <text x="300" y="696" fill="#65766D" font-size="15">#F4F0E7</text>
   </g>
-  <path d="M118 688h964" stroke="#E4DED1" stroke-width="2"/>
-  <text x="1080" y="728" fill="#65766D" font-family="Alexandria, Arial, sans-serif" font-size="15" text-anchor="end" direction="rtl">تصور تجريبي للهوية البصرية · للمراجعة</text>
+
+  <path d="M118 744h964" stroke="#E4DED1" stroke-width="2"/>
+  <text x="1080" y="778" fill="#65766D" font-family="Alexandria, Arial, sans-serif" font-size="15" text-anchor="end" direction="rtl">تصور تجريبي للهوية البصرية · للمراجعة</text>
 </svg>

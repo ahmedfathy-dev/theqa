@@ -21,6 +21,10 @@ const id = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.rand
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const isEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+export function isAdminEmail(email) {
+  return normalizeEmail(email) === normalizeEmail(readState().auth.admin.email);
+}
+
 function resetCode() {
   const values = new Uint32Array(1);
   if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(values);
@@ -528,6 +532,9 @@ export async function localData(path, { method = 'GET', body = {} } = {}) {
     const email = normalizeEmail(body.email);
     const password = String(body.password || '');
     if (!isEmail(email) || !password) fail('أدخل بريدًا إلكترونيًا صحيحًا وكلمة المرور', 400);
+    if (email === normalizeEmail(state.auth.admin.email)) {
+      fail('البريد الإلكتروني أو كلمة المرور غير صحيحة', 401);
+    }
     let account = state.auth.accounts[email];
     if (!account) {
       const demoClient = state.clients.find((client) => client.id === 'demo-client') || state.clients[0];
@@ -611,6 +618,10 @@ export async function localData(path, { method = 'GET', body = {} } = {}) {
       result = { ok: true };
     } else if (route === 'client/files' && method === 'GET') {
       result = state.files.filter((row) => row.client_id === clientId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    } else if (route === 'client/messages' && method === 'DELETE') {
+      state.messages = state.messages.filter((message) => message.client_id !== clientId);
+      saveState(state);
+      result = { ok: true };
     } else if (route === 'client/messages' && method === 'POST') {
       const text = String(body.body || '').trim();
       if (!text) fail('اكتب رسالتك');
@@ -778,6 +789,12 @@ export async function localData(path, { method = 'GET', body = {} } = {}) {
       state.files.push(result);
       addNotification(state, client.id, { type: 'file', text: `أضفنا ملف «${name}»`, href: '/portal/files', ref_id: result.id });
       saveState(state);
+    } else if (parts[1] === 'clients' && parts[3] === 'messages' && method === 'DELETE') {
+      const client = state.clients.find((row) => row.id === parts[2]);
+      if (!client) fail('العميل غير موجود', 404);
+      state.messages = state.messages.filter((message) => message.client_id !== client.id);
+      saveState(state);
+      result = { ok: true };
     } else if (parts[1] === 'clients' && parts[3] === 'messages' && method === 'POST') {
       const client = state.clients.find((row) => row.id === parts[2]);
       const text = String(body.body || '').trim();

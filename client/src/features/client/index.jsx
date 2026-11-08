@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate, useOutletContext, useParams, Link } from 'react-router-dom';
-import { localData, useLocalData } from '../../localData.js';
+import { isAdminEmail, localData, useLocalData } from '../../localData.js';
 import { fmtDate, fmtShort, fmtTime, KIND, NOTIF_TYPE } from '../../format.js';
-import { AppSidebar, AuthLayout, Bar, Button, ButtonLink, Card, Chip, CommentThread, Empty, ErrorBox, Field, FormError, LinkCard, List, Loading, Page, PasswordInput, Range, StatusChip, Switch, useAction } from '../../components/ui.jsx';
+import { AppSidebar, AuthLayout, Bar, Button, ButtonLink, Card, Chip, ClearConversationButton, CommentThread, Empty, ErrorBox, Field, FormError, LinkCard, List, Loading, Page, PasswordInput, Range, StatusChip, Switch, useAction } from '../../components/ui.jsx';
 import FeatureRequestCard from './components/RequestCard.jsx';
 import PasswordRecovery from '../auth/PasswordRecovery.jsx';
 
@@ -19,8 +19,12 @@ export function ClientLogin() {
     e.preventDefault();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setMissing('أدخل بريدًا إلكترونيًا صحيحًا.'); return; }
     if (!password) { setMissing('أدخل كلمة المرور للمتابعة.'); return; }
-    const ok = await run(() => localData('/client/login', { method: 'POST', body: { email, password } }), 'تم تسجيل الدخول بنجاح');
-    if (ok) nav('/portal');
+    const isAdmin = isAdminEmail(email);
+    const ok = await run(
+      () => localData(isAdmin ? '/admin/login' : '/client/login', { method: 'POST', body: { email, password } }),
+      'تم تسجيل الدخول بنجاح',
+    );
+    if (ok) nav(isAdmin ? '/admin' : '/portal', { replace: true });
   };
   return (
     <AuthLayout
@@ -32,14 +36,13 @@ export function ClientLogin() {
       onSubmit={submit}
     >
       <Field label="البريد الإلكتروني" error={missing || err}>
-        <input type="email" className="ltr" dir="ltr" autoFocus autoComplete="email" required value={email} onChange={(e) => { setEmail(e.target.value); setMissing(''); }} placeholder="name@example.com" />
+        <input type="email" className="ltr" dir="ltr" autoFocus autoComplete="email" required value={email} onChange={(e) => { setEmail(e.target.value); setMissing(''); }} placeholder="client@example.test" />
       </Field>
       <Field label="كلمة المرور">
         <PasswordInput autoComplete="current-password" required value={password} onChange={(e) => { setPassword(e.target.value); setMissing(''); }} />
       </Field>
       <Button block loading={busy}>دخول</Button>
       <ButtonLink to="/forgot-password" variant="ghost" size="small" block>هل نسيت كلمة المرور؟</ButtonLink>
-      <ButtonLink to="/admin/login" variant="ghost" size="small" block>دخول الإدارة</ButtonLink>
     </AuthLayout>
   );
 }
@@ -182,7 +185,19 @@ export function Portal() {
             </List>
           ) : <Empty>لا توجد ملفات.</Empty>}
         </Card>
-        <Card title="تواصل مع الفريق" className="conversation-card">
+        <Card
+          title="تواصل مع الفريق"
+          className="conversation-card"
+          actions={messages.length > 0 && (
+            <ClearConversationButton
+              audience="فريق المشروع"
+              onClear={async () => {
+                await localData('/client/messages', { method: 'DELETE' });
+                reload();
+              }}
+            />
+          )}
+        >
           <div className="conversation-scroll" ref={conversationRef} role="log" aria-label="المحادثة مع فريق المشروع" aria-live="polite" tabIndex={0}>
             {messages.length > 0 ? (
               <List className="conversation-list col gap-2">

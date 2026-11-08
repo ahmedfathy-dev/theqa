@@ -1,0 +1,825 @@
+import { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+
+const STORAGE_KEY = 'react-portal-data-v1';
+const DEMO_ADMIN = { email: 'admin@example.test', password: 'admin123' };
+const DEMO_CLIENT = { email: 'client@example.test', password: 'client123' };
+const DEFAULT_PHASES = ['جمع المتطلبات', 'التصميم', 'التطوير', 'الاختبار والمراجعة', 'التسليم'];
+const timestamp = () => new Date().toISOString();
+const relativeDate = (days) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+};
+const relativeTimestamp = (days, hour = 12) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  date.setHours(hour, 20, 0, 0);
+  return date.toISOString();
+};
+const id = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const isEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+function resetCode() {
+  const values = new Uint32Array(1);
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(values);
+  else values[0] = Math.floor(Math.random() * 1_000_000);
+  return String(values[0] % 1_000_000).padStart(6, '0');
+}
+
+function resetKey(role, email) {
+  return `${role}:${normalizeEmail(email)}`;
+}
+
+function requestPasswordReset(state, role, body) {
+  const email = normalizeEmail(body.email);
+  if (!isEmail(email)) fail('أدخل بريدًا إلكترونيًا صحيحًا');
+
+  const account = role === 'admin'
+    ? (normalizeEmail(state.auth.admin.email) === email ? state.auth.admin : null)
+    : state.auth.accounts[email] || null;
+  let code = null;
+  if (account) {
+    code = resetCode();
+    state.auth.passwordResets[resetKey(role, email)] = {
+      code,
+      expires_at: Date.now() + 10 * 60 * 1000,
+      attempts: 0,
+    };
+    saveState(state);
+  }
+  return { ok: true, resetCode: code };
+}
+
+function confirmPasswordReset(state, role, body) {
+  const email = normalizeEmail(body.email);
+  const code = String(body.code || '').trim();
+  const password = String(body.password || '');
+  if (!isEmail(email) || !/^\d{6}$/.test(code)) fail('رمز الاستعادة غير صحيح أو منتهي الصلاحية');
+  if (password.length < 8) fail('يجب أن تتكون كلمة المرور من 8 أحرف على الأقل');
+
+  const account = role === 'admin'
+    ? (normalizeEmail(state.auth.admin.email) === email ? state.auth.admin : null)
+    : state.auth.accounts[email] || null;
+  const key = resetKey(role, email);
+  const reset = state.auth.passwordResets[key];
+  if (!account || !reset || reset.expires_at <= Date.now() || reset.attempts >= 5) {
+    if (reset) {
+      delete state.auth.passwordResets[key];
+      saveState(state);
+    }
+    fail('رمز الاستعادة غير صحيح أو منتهي الصلاحية');
+  }
+  if (reset.code !== code) {
+    reset.attempts += 1;
+    if (reset.attempts >= 5) delete state.auth.passwordResets[key];
+    saveState(state);
+    fail('رمز الاستعادة غير صحيح أو منتهي الصلاحية');
+  }
+
+  account.password = password;
+  delete state.auth.passwordResets[key];
+  if (role === 'admin') state.session.admin = false;
+  else if (account.clientId === state.session.clientId) state.session.clientId = null;
+  saveState(state);
+  return { ok: true };
+}
+
+function seedDemoProject(state) {
+  if (state.demoContentVersion || !state.clients?.some((client) => client.id === 'demo-client')) return false;
+
+  const client = state.clients.find((row) => row.id === 'demo-client');
+  if (client.name === 'عميل تجريبي') client.name = 'دار سُدرة';
+  if (client.project_name === 'الموقع الإلكتروني') client.project_name = 'هوية ومتجر دار سُدرة';
+  if (!client.contact_name || client.contact_name === 'محمد') client.contact_name = 'سارة العبدالله';
+  if (client.progress === 25) client.progress = 42;
+  client.start_date ||= relativeDate(-14);
+  client.end_date ||= relativeDate(30);
+  client.brand_name ||= 'دار سُدرة';
+  client.brand_tagline ||= 'طبيعة بيتك، بروح أهدأ';
+  client.brand_description ||= 'هوية متجر لمنتجات منزلية طبيعية، تجمع هدوء الطبيعة بدفء التفاصيل.';
+  client.brand_palette ||= [
+    { name: 'أخضر السرو', value: '#244B3D' },
+    { name: 'رملي دافئ', value: '#D8BE94' },
+    { name: 'عاجي', value: '#F4F0E7' },
+  ];
+
+  const phases = state.phases.filter((phase) => phase.client_id === client.id).sort((a, b) => a.sort - b.sort);
+  const phaseDates = [[-14, -8], [-7, 3], [4, 17], [18, 24], [25, 30]];
+  phases.forEach((phase, index) => {
+    if (phase.status === (index === 0 ? 'current' : 'next')) {
+      phase.status = index === 0 ? 'done' : index === 1 ? 'current' : 'next';
+    }
+    phase.start_date ||= relativeDate(phaseDates[index]?.[0] ?? 0);
+    phase.end_date ||= relativeDate(phaseDates[index]?.[1] ?? 7);
+  });
+
+  const completedAt = relativeTimestamp(-8, 15);
+  const existingCurrentItem = state.items.find((item) => item.id === 'item-2');
+  if (existingCurrentItem?.status === 'current') {
+    existingCurrentItem.status = 'done';
+    existingCurrentItem.done_at = completedAt;
+  }
+  const demoItems = [
+    { id: 'item-4', phase_id: 'phase-1', name: 'تحديد جمهور المتجر ونبرة العلامة', status: 'done', sort: 2, done_at: completedAt },
+    { id: 'item-5', phase_id: 'phase-2', name: 'تصميم الشعار والرمز', status: 'done', sort: 1, done_at: relativeTimestamp(-3, 14) },
+    { id: 'item-6', phase_id: 'phase-2', name: 'اعتماد لوحة الألوان', status: 'current', sort: 2, done_at: null },
+    { id: 'item-7', phase_id: 'phase-2', name: 'تصميم واجهة المتجر', status: 'next', sort: 3, done_at: null },
+  ];
+  demoItems.forEach((item) => {
+    if (!state.items.some((existing) => existing.id === item.id)) {
+      state.items.push({ ...item, client_id: client.id });
+    }
+  });
+
+  const welcomeUpdate = state.updates.find((update) => update.id === 'update-1');
+  if (welcomeUpdate?.title === 'أهلا بك في بوابة المشروع') {
+    welcomeUpdate.title = 'انطلاق مشروع هوية دار سُدرة';
+    welcomeUpdate.body = 'بدأنا بتحديد شخصية العلامة والجمهور المستهدف، وننتقل الآن إلى اعتماد الشعار ولوحة الألوان.';
+    welcomeUpdate.phase_name = phases[0]?.name || DEFAULT_PHASES[0];
+    welcomeUpdate.created_at = relativeTimestamp(-8, 11);
+  }
+  const updates = [
+    {
+      id: 'update-2', title: 'اتجاه بصري مستوحى من الطبيعة',
+      body: 'جهزنا مسارين بصريين يمزجان أخضر السرو بالدرجات الرملية، مع خطوط عربية واضحة وتفاصيل هادئة.',
+      phase_name: 'التصميم', created_at: relativeTimestamp(-3, 14),
+    },
+    {
+      id: 'update-3', title: 'الشعار الأولي جاهز للمراجعة',
+      body: 'أضفنا تصور الشعار ولوحة الهوية إلى الملفات. ننتظر اعتماد لوحة الألوان قبل استكمال واجهة المتجر.',
+      phase_name: 'التصميم', created_at: relativeTimestamp(-1, 10),
+    },
+  ];
+  state.updates ||= [];
+  updates.forEach((update) => {
+    if (!state.updates.some((existing) => existing.id === update.id)) {
+      state.updates.push({ ...update, client_id: client.id });
+    }
+  });
+
+  const firstRequest = state.requests.find((request) => request.id === 'request-1');
+  if (firstRequest?.title === 'اختر اللون الرئيسي') {
+    firstRequest.title = 'اعتماد لوحة الألوان';
+    firstRequest.description = 'أي لوحة أقرب لهوية دار سُدرة؟ اختيارك يحدد اتجاه تصميم المتجر.';
+    firstRequest.options = [
+      { label: 'أخضر السرو والرملي' },
+      { label: 'أخضر زيتوني وعاجي' },
+      { label: 'طوبي دافئ ورملي' },
+    ];
+  }
+  state.requests ||= [];
+  if (!state.requests.some((request) => request.id === 'request-2')) {
+    state.requests.push({
+      id: 'request-2', client_id: client.id, kind: 'approval',
+      title: 'مراجعة الشعار الأولي',
+      description: 'راجع الشعار المرفق وأرسل اعتمادك أو ملاحظاتك للفريق.',
+      options: [], status: 'open', answer: null, created_at: relativeTimestamp(-1, 10),
+    });
+  }
+
+  state.files ||= [];
+  [
+    { id: 'file-brand-board', name: 'لوحة الهوية البصرية - دار سُدرة.svg', url: '/demo/sidra-brand-board.svg', created_at: relativeTimestamp(-1, 9) },
+    { id: 'file-brand-mark', name: 'الشعار الأولي - دار سُدرة.svg', url: '/demo/sidra-mark.svg', created_at: relativeTimestamp(-3, 13) },
+  ].forEach((file) => {
+    if (!state.files.some((existing) => existing.id === file.id)) {
+      state.files.push({ ...file, client_id: client.id });
+    }
+  });
+
+  const welcomeMessage = state.messages.find((message) => message.id === 'message-1');
+  if (welcomeMessage?.body === 'أهلا بك! يمكنك إرسال أي استفسار من هذه الصفحة.') {
+    welcomeMessage.body = 'أهلًا سارة! شاركنا معك تصور الهوية الأولي. أرسل ملاحظاتك أو اعتمد لوحة الألوان من قسم «المطلوب منك».';
+    welcomeMessage.created_at = relativeTimestamp(-3, 13);
+  }
+  state.messages ||= [];
+  [
+    { id: 'message-2', from_client: true, body: 'الأخضر مع الرملي مناسب جدًا، أحب أن تكون الهوية هادئة وقريبة من الطبيعة.', created_at: relativeTimestamp(-2, 10) },
+    { id: 'message-3', from_client: false, body: 'وصلتنا ملاحظتك. أضفنا خيارين للوحة الألوان لتختاري الأنسب، والشعار الأولي جاهز للمراجعة.', created_at: relativeTimestamp(-1, 11) },
+  ].forEach((message) => {
+    if (!state.messages.some((existing) => existing.id === message.id)) {
+      state.messages.push({ ...message, client_id: client.id });
+    }
+  });
+
+  state.notifications ||= [];
+  const welcomeNotification = state.notifications.find((notification) => notification.id === 'notification-1');
+  if (welcomeNotification) {
+    welcomeNotification.text = 'تحديث جديد: انطلاق مشروع هوية دار سُدرة';
+  }
+  [
+    { id: 'notification-update-3', type: 'update', text: 'تحديث جديد: الشعار الأولي جاهز للمراجعة', href: '/portal/updates/update-3', ref_id: 'update-3', read: false, created_at: relativeTimestamp(-1, 10) },
+    { id: 'notification-request-2', type: 'request', text: 'مطلوب منك: مراجعة الشعار الأولي', href: '/portal/requests', ref_id: 'request-2', read: false, created_at: relativeTimestamp(-1, 10) },
+    { id: 'notification-file-board', type: 'file', text: 'أضفنا ملف «لوحة الهوية البصرية - دار سُدرة.svg»', href: '/portal/files', ref_id: 'file-brand-board', read: false, created_at: relativeTimestamp(-1, 9) },
+  ].forEach((notification) => {
+    if (!state.notifications.some((existing) => existing.id === notification.id)) {
+      state.notifications.push({ ...notification, client_id: client.id });
+    }
+  });
+
+  state.demoContentVersion = 1;
+  return true;
+}
+
+function createInitialState() {
+  const clientId = 'demo-client';
+  const now = timestamp();
+  const phases = DEFAULT_PHASES.map((name, index) => ({
+    id: `phase-${index + 1}`,
+    client_id: clientId,
+    name,
+    sort: index,
+    status: index === 0 ? 'current' : 'next',
+    start_date: '',
+    end_date: '',
+  }));
+  const items = [
+    { id: 'item-1', phase_id: phases[0].id, client_id: clientId, name: 'مراجعة المتطلبات', status: 'done', sort: 0, done_at: now },
+    { id: 'item-2', phase_id: phases[0].id, client_id: clientId, name: 'اعتماد نطاق المشروع', status: 'current', sort: 1, done_at: null },
+    { id: 'item-3', phase_id: phases[1].id, client_id: clientId, name: 'إعداد التصور الأولي', status: 'next', sort: 0, done_at: null },
+  ];
+  const state = {
+    session: { clientId: null, admin: false },
+    auth: {
+      admin: { ...DEMO_ADMIN },
+      clients: { [clientId]: { ...DEMO_CLIENT } },
+      accounts: {
+        [normalizeEmail(DEMO_CLIENT.email)]: { ...DEMO_CLIENT, clientId },
+      },
+      passwordResets: {},
+    },
+    clients: [{
+      id: clientId,
+      username: 'demo-client',
+      name: 'عميل تجريبي',
+      project_name: 'الموقع الإلكتروني',
+      contact_name: 'محمد',
+      email: DEMO_CLIENT.email,
+      telegram_chat: '',
+      start_date: '',
+      end_date: '',
+      progress: 25,
+      notify_email: false,
+      notify_telegram: false,
+      created_at: now,
+    }],
+    phases,
+    items,
+    requests: [{
+      id: 'request-1',
+      client_id: clientId,
+      kind: 'decision',
+      title: 'اختر اللون الرئيسي',
+      description: 'اختر اللون الأنسب لهوية المشروع.',
+      options: [{ label: 'أخضر' }, { label: 'أزرق' }],
+      status: 'open',
+      answer: null,
+      created_at: now,
+    }],
+    updates: [{
+      id: 'update-1',
+      client_id: clientId,
+      title: 'أهلا بك في بوابة المشروع',
+      body: 'يمكنك متابعة تقدم المشروع والتواصل مع الفريق من هذه الصفحة.',
+      phase_name: phases[0].name,
+      created_at: now,
+    }],
+    files: [],
+    messages: [{
+      id: 'message-1',
+      client_id: clientId,
+      from_client: false,
+      body: 'أهلا بك! يمكنك إرسال أي استفسار من هذه الصفحة.',
+      created_at: now,
+    }],
+    comments: [],
+    notifications: [{
+      id: 'notification-1',
+      client_id: clientId,
+      type: 'update',
+      text: 'تحديث جديد: أهلا بك في بوابة المشروع',
+      href: '/portal/updates/update-1',
+      ref_id: 'update-1',
+      read: false,
+      created_at: now,
+    }],
+  };
+  seedDemoProject(state);
+  return state;
+}
+
+function readState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) {
+    const initial = createInitialState();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+    return initial;
+  }
+  try {
+    const state = JSON.parse(saved);
+    let migrated = false;
+    state.auth ||= { admin: { ...DEMO_ADMIN }, clients: {}, accounts: {}, passwordResets: {} };
+    if (!state.auth.admin?.email || !state.auth.admin?.password) {
+      state.auth.admin = { ...DEMO_ADMIN };
+      migrated = true;
+    }
+    state.auth.clients ||= {};
+    state.auth.accounts ||= {};
+    state.auth.passwordResets ||= {};
+    if (seedDemoProject(state)) migrated = true;
+    for (const client of state.clients ?? []) {
+      const credentials = state.auth.clients[client.id];
+      if (credentials) {
+        if (!client.email) {
+          client.email = credentials.email;
+          migrated = true;
+        }
+        const email = normalizeEmail(credentials.email || client.email);
+        if (email && !state.auth.accounts[email]) {
+          state.auth.accounts[email] = { ...credentials, email, clientId: client.id };
+          migrated = true;
+        }
+        continue;
+      }
+      const email = normalizeEmail(client.email) || (client.id === 'demo-client'
+        ? DEMO_CLIENT.email
+        : `${client.username || client.id}@example.test`);
+      client.email = email;
+      state.auth.clients[client.id] = {
+        email,
+        password: client.id === 'demo-client' ? DEMO_CLIENT.password : 'client123',
+      };
+      state.auth.accounts[email] = {
+        ...state.auth.clients[client.id],
+        clientId: client.id,
+      };
+      migrated = true;
+    }
+
+    // The old demo client name was saved into browsers that already ran the app.
+    let renamed = false;
+    for (const client of state.clients ?? []) {
+      if (client.name === 'شركة النور') { client.name = 'عميل تجريبي'; renamed = true; }
+    }
+    if (renamed || migrated) saveState(state);
+    return state;
+  } catch {
+    throw new Error('تعذر قراءة البيانات المحلية. امسح بيانات الموقع من المتصفح للبدء من جديد.');
+  }
+}
+
+function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function fail(message, status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  throw error;
+}
+
+function currentClient(state) {
+  const client = state.clients.find((row) => row.id === state.session.clientId);
+  if (!client) fail('سجّل الدخول للمتابعة', 401);
+  return client;
+}
+
+function requireAdmin(state) {
+  if (!state.session.admin) fail('سجّل الدخول للمتابعة', 401);
+}
+
+function notificationsFor(state, clientId) {
+  return state.notifications.filter((row) => row.client_id === clientId);
+}
+
+function unreadCount(state, clientId) {
+  return notificationsFor(state, clientId).filter((row) => !row.read).length;
+}
+
+function addNotification(state, clientId, { type, text, href, ref_id }) {
+  state.notifications.push({
+    id: id(), client_id: clientId, type, text, href, ref_id, read: false, created_at: timestamp(),
+  });
+}
+
+function commentsFor(state, targetType, targetId) {
+  return state.comments
+    .filter((comment) => comment.target_type === targetType && comment.target_id === targetId)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+function phaseData(state, clientId) {
+  return state.phases
+    .filter((phase) => phase.client_id === clientId)
+    .sort((a, b) => a.sort - b.sort)
+    .map((phase) => {
+      const items = state.items.filter((item) => item.phase_id === phase.id);
+      return { ...phase, done: items.filter((item) => item.status === 'done').length, total: items.length };
+    });
+}
+
+function updateData(state, clientId) {
+  return state.updates
+    .filter((update) => update.client_id === clientId)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map((update) => ({
+      ...update,
+      unread: notificationsFor(state, clientId).some((n) => n.type === 'update' && n.ref_id === update.id && !n.read),
+      comment_count: state.comments.filter((comment) => comment.target_type === 'update' && comment.target_id === update.id).length,
+    }));
+}
+
+function clientThreads(state, clientId) {
+  const clientComments = state.comments.filter((comment) => comment.client_id === clientId);
+  const grouped = new Map();
+  clientComments.forEach((comment) => {
+    const key = `${comment.target_type}:${comment.target_id}`;
+    if (!grouped.has(key)) grouped.set(key, {
+      target_type: comment.target_type,
+      target_id: comment.target_id,
+      comments: [],
+    });
+    grouped.get(key).comments.push(comment);
+  });
+  return [...grouped.values()].map((thread) => {
+    const isUpdate = thread.target_type === 'update';
+    const update = state.updates.find((row) => row.id === thread.target_id);
+    const item = state.items.find((row) => row.id === thread.target_id);
+    const phase = state.phases.find((row) => row.id === item?.phase_id);
+    return {
+      ...thread,
+      title: isUpdate ? update?.title || 'تحديث' : item?.name || 'بند',
+      where: isUpdate ? 'تحديث منشور' : `بند منجز · ${phase?.name || ''}`,
+      needs_reply: thread.comments.some((comment) => comment.needs_reply),
+      last: thread.comments[thread.comments.length - 1].created_at,
+    };
+  }).sort((a, b) => Number(b.needs_reply) - Number(a.needs_reply) || b.last.localeCompare(a.last));
+}
+
+function clientOverview(state, client) {
+  const phases = phaseData(state, client.id);
+  const updates = updateData(state, client.id);
+  const messages = state.messages
+    .filter((message) => message.client_id === client.id)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 10)
+    .reverse();
+  return {
+    client,
+    phases,
+    requests: state.requests.filter((row) => row.client_id === client.id),
+    updates: updates.slice(0, 3),
+    files: state.files.filter((row) => row.client_id === client.id).slice(0, 5),
+    messages,
+    unread: unreadCount(state, client.id),
+  };
+}
+
+function adminClients(state) {
+  const today = new Date().toISOString().slice(0, 10);
+  return state.clients.map((client) => {
+    const openRequests = state.requests.filter((row) => row.client_id === client.id && row.status === 'open').length;
+    const waitingComments = state.comments.filter((row) => row.client_id === client.id && row.needs_reply).length;
+    const late = client.end_date && client.end_date < today && client.progress < 100;
+    return {
+      ...client,
+      open_requests: openRequests,
+      waiting_comments: waitingComments,
+      health: late ? 'late' : openRequests || waitingComments ? 'wait' : 'ok',
+      current_phase: state.phases.find((phase) => phase.client_id === client.id && phase.status === 'current')?.name || null,
+    };
+  }).sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+function adminClient(state, clientId) {
+  const client = state.clients.find((row) => row.id === clientId);
+  if (!client) fail('العميل غير موجود', 404);
+  return {
+    client,
+    phases: state.phases.filter((phase) => phase.client_id === clientId)
+      .sort((a, b) => a.sort - b.sort)
+      .map((phase) => ({ ...phase, items: state.items.filter((item) => item.phase_id === phase.id).sort((a, b) => a.sort - b.sort) })),
+    requests: state.requests.filter((row) => row.client_id === clientId).sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    updates: state.updates.filter((row) => row.client_id === clientId).sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    files: state.files.filter((row) => row.client_id === clientId).sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    messages: state.messages.filter((row) => row.client_id === clientId).sort((a, b) => a.created_at.localeCompare(b.created_at)),
+    waiting_comments: state.comments.filter((row) => row.client_id === clientId && row.needs_reply).length,
+  };
+}
+
+function makeRecord(clientId, values) {
+  return { id: id(), client_id: clientId, ...values, created_at: timestamp() };
+}
+
+export async function localData(path, { method = 'GET', body = {} } = {}) {
+  const state = readState();
+  const route = path.replace(/^\/+/, '');
+  const parts = route.split('/');
+  let result;
+
+  if (route === 'client/password-reset' && method === 'POST') return requestPasswordReset(state, 'client', body);
+  if (route === 'client/password-reset/confirm' && method === 'POST') return confirmPasswordReset(state, 'client', body);
+  if (route === 'admin/password-reset' && method === 'POST') return requestPasswordReset(state, 'admin', body);
+  if (route === 'admin/password-reset/confirm' && method === 'POST') return confirmPasswordReset(state, 'admin', body);
+
+  if (route === 'client/login' && method === 'POST') {
+    const email = normalizeEmail(body.email);
+    const password = String(body.password || '');
+    if (!isEmail(email) || !password) fail('أدخل بريدًا إلكترونيًا صحيحًا وكلمة المرور', 400);
+    let account = state.auth.accounts[email];
+    if (!account) {
+      const demoClient = state.clients.find((client) => client.id === 'demo-client') || state.clients[0];
+      if (!demoClient) fail('لا يوجد حساب عميل تجريبي', 404);
+      account = { email, password, clientId: demoClient.id };
+      state.auth.accounts[email] = account;
+    } else if (account.password !== password) {
+      fail('البريد الإلكتروني أو كلمة المرور غير صحيحة', 401);
+    }
+    state.session.clientId = account.clientId;
+    saveState(state);
+    return { ok: true };
+  }
+  if (route === 'client/logout' && method === 'POST') {
+    state.session.clientId = null;
+    saveState(state);
+    return { ok: true };
+  }
+  if (route === 'admin/login' && method === 'POST') {
+    if (
+      normalizeEmail(body.email) !== normalizeEmail(state.auth.admin.email) ||
+      body.password !== state.auth.admin.password
+    ) fail('البريد الإلكتروني أو كلمة المرور غير صحيحة', 401);
+    state.session.admin = true;
+    saveState(state);
+    return { ok: true };
+  }
+  if (route === 'admin/logout' && method === 'POST') {
+    state.session.admin = false;
+    saveState(state);
+    return { ok: true };
+  }
+
+  if (parts[0] === 'client') {
+    const client = currentClient(state);
+    const clientId = client.id;
+    if (route === 'client/overview') result = clientOverview(state, client);
+    else if (route === 'client/updates' && method === 'GET') result = updateData(state, clientId);
+    else if (parts[1] === 'updates' && parts.length === 3 && method === 'GET') {
+      const update = state.updates.find((row) => row.id === parts[2] && row.client_id === clientId);
+      if (!update) fail('التحديث غير موجود', 404);
+      state.notifications.forEach((n) => { if (n.client_id === clientId && n.ref_id === update.id) n.read = true; });
+      saveState(state);
+      result = { update, comments: commentsFor(state, 'update', update.id) };
+    } else if (parts[1] === 'updates' && parts[3] === 'comments' && method === 'POST') {
+      const update = state.updates.find((row) => row.id === parts[2] && row.client_id === clientId);
+      if (!update) fail('التحديث غير موجود', 404);
+      const text = String(body.body || '').trim();
+      if (!text) fail('اكتب تعليقك');
+      result = makeRecord(clientId, { target_type: 'update', target_id: update.id, author: 'client', body: text, needs_reply: true });
+      state.comments.push(result);
+      saveState(state);
+    } else if (route === 'client/phases' && method === 'GET') result = phaseData(state, clientId);
+    else if (parts[1] === 'phases' && parts.length === 3 && method === 'GET') {
+      const phase = state.phases.find((row) => row.id === parts[2] && row.client_id === clientId);
+      if (!phase) fail('المرحلة غير موجودة', 404);
+      const items = state.items.filter((row) => row.phase_id === phase.id).sort((a, b) => a.sort - b.sort);
+      items.forEach((item) => { item.comments = commentsFor(state, 'item', item.id); });
+      state.notifications.forEach((n) => { if (n.client_id === clientId && n.ref_id === phase.id) n.read = true; });
+      saveState(state);
+      result = { phase, items };
+    } else if (parts[1] === 'items' && parts[3] === 'comments' && method === 'POST') {
+      const item = state.items.find((row) => row.id === parts[2] && row.client_id === clientId);
+      if (!item || item.status !== 'done') fail('التعليق متاح على البنود المنجزة فقط', 400);
+      const text = String(body.body || '').trim();
+      if (!text) fail('اكتب تعليقك');
+      result = makeRecord(clientId, { target_type: 'item', target_id: item.id, author: 'client', body: text, needs_reply: true });
+      state.comments.push(result);
+      saveState(state);
+    } else if (route === 'client/requests' && method === 'GET') {
+      result = state.requests.filter((row) => row.client_id === clientId);
+    } else if (parts[1] === 'requests' && parts[3] === 'answer' && method === 'POST') {
+      const request = state.requests.find((row) => row.id === parts[2] && row.client_id === clientId && row.status === 'open');
+      if (!request) fail('الطلب غير موجود أو تم الرد عليه', 404);
+      if (request.kind === 'decision' && !request.options?.some((option) => option.label === body.answer)) fail('اختيار غير صالح');
+      if (request.kind === 'content' && !String(body.answer || '').trim()) fail('اكتب المحتوى أو ضع رابطا');
+      request.status = 'done';
+      request.answer = request.kind === 'approval' ? 'تم الاعتماد' : String(body.answer || '').trim();
+      request.answered_at = timestamp();
+      saveState(state);
+      result = { ok: true };
+    } else if (route === 'client/files' && method === 'GET') {
+      result = state.files.filter((row) => row.client_id === clientId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    } else if (route === 'client/messages' && method === 'POST') {
+      const text = String(body.body || '').trim();
+      if (!text) fail('اكتب رسالتك');
+      state.messages.push(makeRecord(clientId, { from_client: true, body: text }));
+      saveState(state);
+      result = { ok: true };
+    } else if (route === 'client/notifications/count' && method === 'GET') result = { unread: unreadCount(state, clientId) };
+    else if (route === 'client/notifications' && method === 'GET') {
+      const items = notificationsFor(state, clientId).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 50);
+      result = { items, unread: items.filter((n) => !n.read).length, prefs: { notify_email: client.notify_email, notify_telegram: client.notify_telegram } };
+    } else if (route === 'client/notifications/read-all' && method === 'POST') {
+      state.notifications.forEach((n) => { if (n.client_id === clientId) n.read = true; });
+      saveState(state);
+      result = { ok: true };
+    } else if (parts[1] === 'notifications' && parts[3] === 'read' && method === 'POST') {
+      const notification = state.notifications.find((row) => row.id === parts[2] && row.client_id === clientId);
+      if (notification) notification.read = true;
+      saveState(state);
+      result = { ok: true };
+    } else if (route === 'client/prefs' && method === 'PATCH') {
+      ['notify_email', 'notify_telegram'].forEach((key) => {
+        if (typeof body[key] === 'boolean') client[key] = body[key];
+      });
+      saveState(state);
+      result = { ok: true };
+    }
+  } else if (parts[0] === 'admin') {
+    requireAdmin(state);
+    if (route === 'admin/me' && method === 'GET') result = { ok: true };
+    else if (route === 'admin/clients' && method === 'GET') result = adminClients(state);
+    else if (route === 'admin/clients' && method === 'POST') {
+      const name = String(body.name || '').trim();
+      const projectName = String(body.project_name || '').trim();
+      if (!name || !projectName) fail('اسم الشركة والمشروع مطلوبان');
+      const email = normalizeEmail(body.email);
+      if (!isEmail(email)) fail('أدخل بريدًا إلكترونيًا صحيحًا للعميل');
+      if (Object.values(state.auth.clients).some((credentials) => normalizeEmail(credentials.email) === email)) {
+        fail('هذا البريد مرتبط بحساب عميل آخر');
+      }
+      if (state.auth.accounts[email]) fail('هذا البريد مرتبط بحساب عميل آخر');
+      const clientId = id();
+      const client = {
+        id: clientId,
+        username: `client-${Math.random().toString(36).slice(2, 10)}`,
+        name,
+        project_name: projectName,
+        contact_name: body.contact_name || '',
+        email,
+        telegram_chat: body.telegram_chat || '',
+        start_date: body.start_date || '',
+        end_date: body.end_date || '',
+        progress: 0,
+        notify_email: false,
+        notify_telegram: false,
+        created_at: timestamp(),
+      };
+      state.clients.push(client);
+      state.auth.clients[clientId] = { email, password: 'client123' };
+      state.auth.accounts[email] = { ...state.auth.clients[clientId], clientId };
+      DEFAULT_PHASES.forEach((phaseName, index) => state.phases.push({
+        id: id(), client_id: clientId, name: phaseName, sort: index,
+        status: index === 0 ? 'current' : 'next', start_date: '', end_date: '',
+      }));
+      saveState(state);
+      result = { id: clientId };
+    } else if (parts[1] === 'clients' && parts[2] && parts.length === 3 && method === 'GET') {
+      result = adminClient(state, parts[2]);
+    } else if (parts[1] === 'clients' && parts[2] && parts.length === 3 && method === 'PATCH') {
+      const client = state.clients.find((row) => row.id === parts[2]);
+      if (!client) fail('العميل غير موجود', 404);
+      client.progress = Math.max(0, Math.min(100, Number.parseInt(body.progress, 10) || 0));
+      client.start_date = body.start_date || '';
+      client.end_date = body.end_date || '';
+      saveState(state);
+      result = { ok: true };
+    } else if (parts[1] === 'clients' && parts[3] === 'comments' && method === 'GET') {
+      result = clientThreads(state, parts[2]);
+    } else if (parts[1] === 'clients' && parts[3] === 'threads' && parts[4] === 'reply' && method === 'POST') {
+      const { target_type: targetType, target_id: targetId, body: text } = body;
+      if (!['update', 'item'].includes(targetType) || !String(text || '').trim()) fail('بيانات التعليق غير مكتملة');
+      const client = state.clients.find((row) => row.id === parts[2]);
+      if (!client) fail('العميل غير موجود', 404);
+      const exists = targetType === 'update'
+        ? state.updates.some((row) => row.id === targetId && row.client_id === client.id)
+        : state.items.some((row) => row.id === targetId && row.client_id === client.id);
+      if (!exists) fail('التعليق غير موجود', 404);
+      state.comments.push(makeRecord(client.id, { target_type: targetType, target_id: targetId, author: 'team', body: String(text).trim(), needs_reply: false }));
+      state.comments.forEach((comment) => {
+        if (comment.client_id === client.id && comment.target_type === targetType && comment.target_id === targetId && comment.author === 'client') {
+          comment.needs_reply = false;
+        }
+      });
+      const refId = targetType === 'update' ? targetId : state.items.find((row) => row.id === targetId).phase_id;
+      addNotification(state, client.id, {
+        type: 'reply',
+        text: 'فريق المشروع ردّ على تعليقك',
+        href: targetType === 'update' ? `/portal/updates/${targetId}` : `/portal/phases/${refId}`,
+        ref_id: refId,
+      });
+      saveState(state);
+      result = { ok: true };
+    } else if (parts[1] === 'phases' && parts[2] && parts.length === 3 && method === 'PATCH') {
+      const phase = state.phases.find((row) => row.id === parts[2]);
+      if (!phase) fail('المرحلة غير موجودة', 404);
+      const wasDone = phase.status === 'done';
+      phase.status = body.status;
+      phase.start_date = body.start_date || '';
+      phase.end_date = body.end_date || '';
+      if (phase.status === 'done' && !wasDone) addNotification(state, phase.client_id, {
+        type: 'phase', text: `اكتملت مرحلة «${phase.name}»`, href: `/portal/phases/${phase.id}`, ref_id: phase.id,
+      });
+      saveState(state);
+      result = { ok: true };
+    } else if (parts[1] === 'phases' && parts[3] === 'items' && method === 'POST') {
+      const phase = state.phases.find((row) => row.id === parts[2]);
+      const name = String(body.name || '').trim();
+      if (!phase) fail('المرحلة غير موجودة', 404);
+      if (!name) fail('اكتب اسم البند');
+      const phaseItems = state.items.filter((item) => item.phase_id === phase.id);
+      result = makeRecord(phase.client_id, {
+        phase_id: phase.id, name, status: 'next', sort: phaseItems.length, done_at: null,
+      });
+      state.items.push(result);
+      saveState(state);
+    } else if (parts[1] === 'items' && parts[2] && method === 'PATCH') {
+      const item = state.items.find((row) => row.id === parts[2]);
+      if (!item) fail('البند غير موجود', 404);
+      const wasDone = item.status === 'done';
+      item.status = body.status;
+      item.done_at = item.status === 'done' ? item.done_at || timestamp() : null;
+      if (item.status === 'done' && !wasDone) addNotification(state, item.client_id, {
+        type: 'phase', text: `تم إنجاز «${item.name}»`, href: `/portal/phases/${item.phase_id}`, ref_id: item.phase_id,
+      });
+      saveState(state);
+      result = { ok: true };
+    } else if (parts[1] === 'clients' && parts[3] === 'requests' && method === 'POST') {
+      const client = state.clients.find((row) => row.id === parts[2]);
+      const title = String(body.title || '').trim();
+      if (!client || !title) fail('بيانات الطلب غير مكتملة');
+      const options = body.kind === 'decision'
+        ? String(body.options || '').split('\n').map((label) => label.trim()).filter(Boolean).map((label) => ({ label }))
+        : null;
+      if (body.kind === 'decision' && options.length < 2) fail('القرار يحتاج خيارين على الأقل');
+      if (!['decision', 'content', 'approval'].includes(body.kind)) fail('نوع الطلب غير صالح');
+      result = makeRecord(client.id, {
+        kind: body.kind, title, description: String(body.description || '').trim(), options, status: 'open', answer: null,
+      });
+      state.requests.push(result);
+      addNotification(state, client.id, { type: 'request', text: `مطلوب منك: ${title}`, href: '/portal/requests', ref_id: result.id });
+      saveState(state);
+    } else if (parts[1] === 'clients' && parts[3] === 'updates' && method === 'POST') {
+      const client = state.clients.find((row) => row.id === parts[2]);
+      const title = String(body.title || '').trim();
+      if (!client || !title) fail('اكتب عنوان التحديث');
+      result = makeRecord(client.id, { title, body: String(body.body || '').trim(), phase_name: body.phase_name || null });
+      state.updates.push(result);
+      addNotification(state, client.id, { type: 'update', text: `تحديث جديد: ${title}`, href: `/portal/updates/${result.id}`, ref_id: result.id });
+      saveState(state);
+    } else if (parts[1] === 'clients' && parts[3] === 'files' && method === 'POST') {
+      const client = state.clients.find((row) => row.id === parts[2]);
+      const name = String(body.name || '').trim();
+      const url = String(body.url || '').trim();
+      if (!client || !name || !/^https?:\/\//i.test(url)) fail('الاسم والرابط (https://) مطلوبان');
+      result = makeRecord(client.id, { name, url });
+      state.files.push(result);
+      addNotification(state, client.id, { type: 'file', text: `أضفنا ملف «${name}»`, href: '/portal/files', ref_id: result.id });
+      saveState(state);
+    } else if (parts[1] === 'clients' && parts[3] === 'messages' && method === 'POST') {
+      const client = state.clients.find((row) => row.id === parts[2]);
+      const text = String(body.body || '').trim();
+      if (!client || !text) fail('اكتب الرد');
+      state.messages.push(makeRecord(client.id, { from_client: false, body: text }));
+      addNotification(state, client.id, { type: 'reply', text: 'رد جديد من فريق المشروع على رسالتك', href: '/portal', ref_id: null });
+      saveState(state);
+      result = { ok: true };
+    }
+  }
+
+  if (result === undefined) fail(`العملية المحلية غير مدعومة: ${method} ${path}`, 404);
+  return result;
+}
+
+export function useLocalData(path) {
+  const [state, setState] = useState({ data: null, error: null, loading: true });
+  const nav = useNavigate();
+  const { pathname } = useLocation();
+  const load = useCallback((silent = false) => {
+    if (!silent) setState((current) => ({ ...current, loading: true }));
+    try {
+      const data = readState();
+      const parts = path.replace(/^\/+/, '').split('/');
+      if (parts[0] === 'client' && path !== '/client/login' && path !== '/client/logout') {
+        currentClient(data);
+      }
+      if (parts[0] === 'admin' && !['/admin/login', '/admin/logout'].includes(path)) {
+        requireAdmin(data);
+      }
+    } catch (error) {
+      if (error.status === 401) nav(pathname.startsWith('/admin') ? '/admin/login' : '/login', { replace: true });
+      setState({ data: null, error, loading: false });
+      return Promise.resolve();
+    }
+    localData(path).then((result) => setState({ data: result, error: null, loading: false })).catch((error) => {
+      if (error.status === 401) nav(pathname.startsWith('/admin') ? '/admin/login' : '/login', { replace: true });
+      setState({ data: null, error, loading: false });
+    });
+    return Promise.resolve();
+  }, [path, nav, pathname]);
+
+  useEffect(() => { load(); }, [load]);
+  return { ...state, reload: () => load(true) };
+}

@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.claude/
+.impeccable/
+.playwright-mcp/
+skills-lock.json
+sidebar-desktop.png
+temp-console.txt
